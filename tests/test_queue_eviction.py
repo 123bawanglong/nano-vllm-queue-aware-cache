@@ -88,7 +88,6 @@ def test_lookup_is_bounded_read_only_and_stops_at_first_miss():
     retained = manager._get_retained_blocks(seq(33), islice(waiting, 2))
     assert len(retained) == 1
     assert before == repr((vars(manager), [vars(b) for b in manager.blocks], [vars(s) for s in waiting]))
-    # A later hash may still exist, but cannot be used through a prefix hole.
     request = seq(11, 3)
     h = manager.compute_hash(request.block(0))
     del manager.hash_to_block_id[h]

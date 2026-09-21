@@ -16,7 +16,7 @@ class Config:
     eos: int = -1
     kvcache_block_size: int = 256
     num_kvcache_blocks: int = -1
-    prefix_cache_lookahead: int = 0  # Waiting entries to inspect; 0 keeps FIFO eviction.
+    prefix_cache_lookahead: int = 0
 
     def __post_init__(self):
         assert os.path.isdir(self.model)

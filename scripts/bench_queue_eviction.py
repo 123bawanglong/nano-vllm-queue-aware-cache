@@ -1,4 +1,3 @@
-"""Paired single-GPU benchmark with a benchmark-only physical KV capacity limit."""
 import argparse
 import ast
 import atexit
@@ -22,7 +21,6 @@ from nanovllm.engine.sequence import Sequence
 
 
 def limit_kv_capacity(blocks):
-    """Replace only the profiling-derived capacity in the original allocator."""
     original = model_runner.ModelRunner.allocate_kv_cache
     tree = ast.parse(textwrap.dedent(inspect.getsource(original)))
     matches = 0

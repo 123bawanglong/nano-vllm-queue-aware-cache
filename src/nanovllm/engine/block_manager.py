@@ -72,7 +72,6 @@ class BlockManager:
         return retained
 
     def _allocate_blocks(self, seq: Sequence, count: int, waiting_seqs: Iterable[Sequence] | None):
-        # Local state is discarded on return or exception; retained blocks are never pinned.
         retained = None
         for _ in range(count):
             if waiting_seqs is not None and retained is None and self.blocks[self.free_block_ids[0]].hash != -1:

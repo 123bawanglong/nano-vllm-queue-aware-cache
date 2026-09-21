@@ -1,4 +1,3 @@
-"""Targeted full-vocabulary logit diagnostic; not a performance benchmark."""
 import argparse
 import atexit
 import json
