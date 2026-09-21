@@ -15,7 +15,7 @@
 | [bench_queue_eviction.py](../scripts/bench_queue_eviction.py) | 无该策略的成对对照实验 | 固定输入轨迹、物理 KV 容量、预热和交替运行顺序，测量吞吐、TTFT、prefill 与调度时间 |
 | [check_queue_eviction.py](../scripts/check_queue_eviction.py) | 无该策略的专项数值诊断 | 比较完整词表 logits，并分别报告相同缓存命中条件和缓存压力基线下的差异 |
 
-三个引擎文件合计增加 43 行、删除 8 行；不包含测试、脚本和文档。核心差异见 [queue-aware-eviction.patch](queue-aware-eviction.patch)，其中路径采用上游目录布局。也可直接查看 [上游 PR #278 的文件差异](https://github.com/GeeeekExplorer/nano-vllm/pull/278/files)。
+三个引擎文件合计增加 43 行、删除 8 行；不包含测试、脚本和文档。具体改动可查看 [上游 PR #278 的文件差异](https://github.com/GeeeekExplorer/nano-vllm/pull/278/files)。
 
 ## 关键设计选择
 

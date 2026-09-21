@@ -1,6 +1,6 @@
 # nano-vLLM：队列感知 KV Cache 淘汰优化
 
-[核心代码差异](docs/queue-aware-eviction.patch) · [原始实验数据](docs/raw)
+[原始实验数据](docs/raw)
 
 ## 实验配置
 
