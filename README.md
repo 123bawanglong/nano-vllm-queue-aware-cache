@@ -1,10 +1,6 @@
-# nano-vLLM Queue-Aware Cache
+# nano-vLLM：队列感知 KV Cache 淘汰优化
 
-基于 nano-vLLM 的队列感知 KV Cache 淘汰优化。通过保留等待请求近期会复用的前缀，在 RTX 5080 / Qwen3-0.6B 的缓存压力实验中实现 **输出吞吐提升 12.27%、prefill 计算量减少 23.03%**。
-
-[上游 PR #278](https://github.com/GeeeekExplorer/nano-vllm/pull/278) · [改动范围与验证依据](docs/changes.md) · [核心代码差异](docs/queue-aware-eviction.patch) · [原始实验数据](docs/raw)
-
-本文按“基线测试 → 问题分析 → 方案实现 → 复测结果”展示优化过程。详细原理收录在下方的展开区域，安装和复现命令位于文末。
+[核心代码差异](docs/queue-aware-eviction.patch) · [原始实验数据](docs/raw)
 
 ## 实验配置
 
@@ -14,7 +10,7 @@ RTX 5080 / Qwen3-0.6B / BF16 / 单卡 / CUDA Graph。每轮 64 个请求，分 8
 
 ## 基线测试
 
-![关闭优化：五轮基线测试原始日志](docs/images/image-20260921210640149.png)
+![基线测试原始日志](docs/images/image-20260921210640149.png)
 
 平均吞吐为 **394.05 tokens/s**，每轮实际执行 **140032 prefill tokens**，平均每轮 p95 TTFT 为 **571.16 ms**。
 
@@ -32,40 +28,10 @@ RTX 5080 / Qwen3-0.6B / BF16 / 单卡 / CUDA Graph。每轮 64 个请求，分 8
 
 优先分配集合外的空闲块；如果全部候选块都在集合内，仍按原顺序分配。保留只是降低淘汰优先级，不锁定显存。集合在每次分配调用内惰性构建和复用，不改变引用计数规则和请求调度顺序。
 
-## 复测结果
-
-![开启优化：五轮队列感知淘汰测试原始日志](docs/images/image-20260921210711152.png)
-
-| 指标 | V0 | V1 | 变化 |
-|---|---:|---:|---:|
-| 平均输出吞吐（tokens/s） | 394.05 | 442.40 | **+12.27%** |
-| 每轮 prefill tokens | 140032 | 107776 | **−23.03%** |
-| 平均每轮 p95 TTFT（ms） | 571.16 | 556.03 | **−2.65%** |
-| 每轮 schedule() 累计耗时（ms） | 15.48 | 33.97 | +18.50 ms |
-
-相同输入和输出工作量下，V1 少计算了 **32256 prefill tokens**，吞吐同步提高。额外的队列查询增加了 CPU 调度开销，但本场景中减少 prefill 的收益更大。
-
-这里的 prefill tokens 包含首次计算及重算；调度耗时统计整个 `schedule()`，不是单独统计查询开销。p95 TTFT 先按每轮计算，再取五轮平均。
-
-## 对照实验与正确性
-
-| 对照场景 | V0 输出吞吐（tokens/s） | V1 输出吞吐（tokens/s） | 变化 |
-|---|---:|---:|---:|
-| 重复前缀，160 blocks，容量充足 | 814.97 | 813.37 | −0.20% |
-| 无共享前缀，68 blocks | 265.81 | 265.85 | +0.01% |
-
-两项差异均按测量噪声处理。收益主要出现在有前缀复用且缓存紧张的场景，不代表通用吞吐提升。
-
-14 项行为测试覆盖队列顺序、惰性查询、连续前缀、全部保留时的回退、Decode 分配及 1000 次随机分配/释放。针对性 GPU 检查中，优化组与保留相同前缀的原策略对照组在 64 行完整 logits 上逐位一致；与缓存压力基线相比，最大绝对差异为 0.21875，64 行 argmax 均一致。另有 16 个请求、每请求 256 输出 tokens 的跨块检查，完成后全部 block 引用释放。
-
-这些检查用于不同目的：行为测试验证缓存管理逻辑，logits 检查验证特定条件下的数值表现，成对性能实验验证收益。完整条件与限制见 [验证说明](docs/queue_eviction.md)。
-
-截图展示的是 VS Code 中已保存的原始日志，本次文档整合没有重新测量 GPU 性能。TTFT 是离线引擎从请求波次到达到首 token 的时间，不包含 HTTP 服务链路。可直接核对 [基线日志](docs/raw/baseline-pressure.log)、[优化日志](docs/raw/queue-pressure.log) 和 [完整压力实验数据](docs/raw/pr-pressure.json)。
-
 <details>
-<summary><strong>展开原理详解：block 生命周期、连续前缀匹配与队列感知淘汰</strong></summary>
+<summary><strong>展开原理详解</strong></summary>
 
-## 原理详解
+### 原理详解
 
 #### 1. KV Cache 缓存了什么
 
@@ -177,62 +143,21 @@ H3 = hash(H2, tokens_3)
 
 </details>
 
-## 改动入口
+## 复测结果
 
-引擎改动集中于 **BlockManager、Scheduler 和配置**三个文件：只读前缀查询、惰性保留集合，以及 Prefill/Decode 分配时的前瞻传递。配套提供 14 项行为测试、成对性能实验和 logits 检查脚本。
+![优化后测试原始日志](docs/images/image-20260921210711152.png)
 
-阅读 [改动说明](docs/changes.md) 可核对每个文件的职责、设计取舍和验证依据；[核心补丁](docs/queue-aware-eviction.patch) 保留相对上游基线的原始差异，方便区分已有引擎能力与本项目贡献。
+| 指标 | V0 | V1 | 变化 |
+|---|---:|---:|---:|
+| 平均输出吞吐（tokens/s） | 394.05 | 442.40 | **+12.27%** |
+| 每轮 prefill tokens | 140032 | 107776 | **−23.03%** |
+| 平均每轮 p95 TTFT（ms） | 571.16 | 556.03 | **−2.65%** |
+| 每轮 schedule() 累计耗时（ms） | 15.48 | 33.97 | +18.50 ms |
 
-## 安装与使用
+相同输入和输出工作量下，V1 少计算了 **32256 prefill tokens**，吞吐同步提高。额外的队列查询增加了 CPU 调度开销，但本场景中减少 prefill 的收益更大。
 
-需要 Linux/WSL、CUDA GPU 和兼容的 PyTorch、Triton、FlashAttention 环境；Python 3.10–3.12。建议使用独立虚拟环境，避免与其他 nano-vLLM 安装冲突。
+这里的 prefill tokens 包含首次计算及重算；调度耗时统计整个 `schedule()`，不是单独统计查询开销。p95 TTFT 先按每轮计算，再取五轮平均。
 
-```bash
-git clone https://github.com/123bawanglong/nano-vllm-queue-aware-cache.git
-cd nano-vllm-queue-aware-cache
-python -m pip install -e .
-python -m pip install pytest
-```
+## 结论
 
-```python
-from nanovllm import LLM, SamplingParams
-
-llm = LLM("/path/to/Qwen3-0.6B", prefix_cache_lookahead=16)
-outputs = llm.generate(
-    ["Explain automatic prefix caching."],
-    SamplingParams(temperature=0.6, max_tokens=128),
-)
-print(outputs[0]["text"])
-```
-
-## 验证与复现
-
-```bash
-python -m pytest tests/test_queue_eviction.py -q
-python scripts/check_queue_eviction.py \
-  --model /path/to/Qwen3-0.6B --output /tmp/queue-check.json
-for scenario in pressure ample unique; do
-  python scripts/bench_queue_eviction.py \
-    --model /path/to/Qwen3-0.6B \
-    --scenario "$scenario" --output "/tmp/queue-$scenario.json"
-done
-```
-
-14 项行为测试覆盖队列顺序、惰性查询、连续前缀、全部保留时的回退、Decode 分配及随机引用计数检查。GPU logits 检查的对照条件与数值差异见[验证说明](docs/queue_eviction.md)，行为测试通过与性能收益分别验证。
-
-## 目录
-
-```text
-src/nanovllm/    推理引擎及缓存淘汰实现
-tests/          缓存管理行为测试
-scripts/        性能实验与数值检查
-docs/           实验报告、原理、截图与原始数据
-```
-
-主要实现：[BlockManager](src/nanovllm/engine/block_manager.py)、[Scheduler](src/nanovllm/engine/scheduler.py)、[配置](src/nanovllm/config.py)。
-
-## 来源与许可证
-
-本项目基于 [GeeeekExplorer/nano-vllm](https://github.com/GeeeekExplorer/nano-vllm)，保留上游作者信息与 [MIT 许可证](LICENSE)。上游基线为 `bb823b3e06983d71485a8e1f23715ebd87d98ef8`，优化实现快照为 `e02aa9d6851f4acca47fe091b4dd715674a88334`。队列感知淘汰改动已提交至 [PR #278](https://github.com/GeeeekExplorer/nano-vllm/pull/278)，该链接不表示已合并。
-
-本仓库将 Python 包整理到 `src/`，并相应调整安装配置、测试路径与实验脚本入口；缓存算法沿用上述实现快照。
+队列感知淘汰通过优先保留近期会复用的前缀，在重复长前缀压力负载下能够实现 **12.27% 吞吐提升、23.03% prefill 计算量减少**。
