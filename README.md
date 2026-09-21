@@ -28,6 +28,18 @@ RTX 5080 / Qwen3-0.6B / BF16 / 单卡 / CUDA Graph。每轮 64 个请求，分 8
 
 优先分配集合外的空闲块；如果全部候选块都在集合内，仍按原顺序分配。保留只是降低淘汰优先级，不锁定显存。集合在每次分配调用内惰性构建和复用，不改变引用计数规则和请求调度顺序。
 
+### 核心改动
+
+| 文件 | 本项目改动 |
+|---|---|
+| [block_manager.py](src/nanovllm/engine/block_manager.py) | 只读查询连续前缀，惰性构建保留集合，优先回收集合外的空闲块 |
+| [scheduler.py](src/nanovllm/engine/scheduler.py) | 将有界等待队列前瞻传入 Prefill 分配与 Decode 扩块路径 |
+| [config.py](src/nanovllm/config.py) | 新增 `prefix_cache_lookahead`，默认 0 关闭优化 |
+| [行为测试](tests/test_queue_eviction.py) | 14 项测试覆盖保留与回退、查询只读性、连续前缀和引用计数 |
+| [性能实验](scripts/bench_queue_eviction.py) / [数值检查](scripts/check_queue_eviction.py) | 提供成对性能对照与完整词表 logits 检查 |
+
+代码改动已提交至 [nano-vLLM PR #278](https://github.com/GeeeekExplorer/nano-vllm/pull/278)，具体差异可在 PR 中查看。
+
 <details>
 <summary><strong>展开原理详解</strong></summary>
 
