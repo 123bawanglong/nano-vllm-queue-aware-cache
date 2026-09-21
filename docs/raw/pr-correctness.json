@@ -1,0 +1,25 @@
+{
+  "physical_blocks": 102,
+  "teacher_forced_token": 1000,
+  "comparisons": {
+    "baseline__queue": {
+      "rows": 64,
+      "max_abs": 0.21875,
+      "max_relative_l2": 0.029576901346445084,
+      "argmax_matches": 64
+    },
+    "baseline__cache_hit_control": {
+      "rows": 64,
+      "max_abs": 0.21875,
+      "max_relative_l2": 0.029576901346445084,
+      "argmax_matches": 64
+    },
+    "cache_hit_control__queue": {
+      "rows": 64,
+      "max_abs": 0.0,
+      "max_relative_l2": 0.0,
+      "argmax_matches": 64
+    }
+  },
+  "passed": true
+}
